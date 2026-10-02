@@ -42,6 +42,11 @@ command output are defined in [the file protocol](docs/PROTOCOL.md). Only the
 deterministic `mock` backend is included in T001; request JSON cannot supply a command,
 executable, environment, or shell string.
 
+On first use the supervisor creates the state root with mode `0700` and an ownership
+marker. It refuses to adopt or change an existing unmarked directory. Existing state
+roots created by an earlier prototype must therefore be moved aside or explicitly
+removed by their owner before reuse.
+
 Run the complete test suite with:
 
 ```text

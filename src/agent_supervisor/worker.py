@@ -9,7 +9,7 @@ from .backends.mock import run as run_mock
 from .constants import MAX_LOG_BYTES, SAFE_WORKER_ENV, START_WAIT_SECONDS
 from .errors import SupervisorError
 from .protocol import validate_result
-from .state import atomic_json, read_json, release_lock, run_directory
+from .state import atomic_json, read_json, release_lock, run_directory, run_guard
 
 
 def now() -> str:
@@ -52,7 +52,6 @@ def main() -> int:
     run_dir = run_directory(root, run_id)
     request = read_json(run_dir / "request.json")
     runtime_path = run_dir / "runtime.json"
-    runtime = read_json(runtime_path)
     atomic_json(run_dir / "backend-log.json", {"stdout": "", "stderr": "", "truncated": False})
     cancelled = False
 
@@ -63,17 +62,22 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
-    runtime["state"] = "running"
-    runtime["started_at"] = now()
-    atomic_json(runtime_path, runtime)
+    with run_guard(run_dir):
+        runtime = read_json(runtime_path)
+        runtime["state"] = "running"
+        runtime["started_at"] = now()
+        atomic_json(runtime_path, runtime)
     ack_deadline = time.monotonic() + START_WAIT_SECONDS
     while not (run_dir / "start-ack.json").is_file():
         if time.monotonic() >= ack_deadline:
-            runtime["state"] = "failed"
-            runtime["finished_at"] = now()
-            runtime["exit_code"] = 6
-            atomic_json(runtime_path, runtime)
-            release_lock(root, request["worktree"], run_id)
+            with run_guard(run_dir):
+                runtime = read_json(runtime_path)
+                if runtime["state"] not in {"completed", "failed", "cancelled", "stopped"}:
+                    runtime["state"] = "failed"
+                    runtime["finished_at"] = now()
+                    runtime["exit_code"] = 6
+                    atomic_json(runtime_path, runtime)
+                release_lock(root, request["worktree"], run_id)
             return 6
         time.sleep(0.02)
     exit_code: int | None = None
@@ -87,7 +91,7 @@ def main() -> int:
 
         signal.signal(signal.SIGALRM, timeout_signal)
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            exit_code = run_mock(Path(request["prompt_file"]), run_dir / "result.json", run_id)
+            exit_code = run_mock(run_dir / "prompt.snapshot", run_dir / "result.json", run_id)
         signal.setitimer(signal.ITIMER_REAL, 0)
         if exit_code != 0:
             runtime["state"] = "failed"
@@ -119,8 +123,11 @@ def main() -> int:
                 "truncated": stdout.truncated or stderr.truncated,
             },
         )
-        atomic_json(runtime_path, runtime)
-        release_lock(root, request["worktree"], run_id)
+        with run_guard(run_dir):
+            current = read_json(runtime_path)
+            if current["state"] not in {"completed", "failed", "cancelled", "stopped"}:
+                atomic_json(runtime_path, runtime)
+            release_lock(root, request["worktree"], run_id)
     return exit_code or 0
 
 

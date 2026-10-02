@@ -22,10 +22,27 @@ Each run is stored beneath `runs/<run-id>`. JSON writes use a same-directory tem
 file, file flush and fsync, atomic replace, and parent-directory fsync where supported.
 Directories are mode `0700` and files are mode `0600`.
 
+A newly created state root receives an exact supervisor identity marker. An existing
+root is reused only when it has that marker and mode `0700`; existing unmarked roots
+are rejected without modification. Every state-root ancestor and the `runs` and
+`locks` layout entries are checked without following symlinks. Existing layout entries
+must be real mode `0700` directories.
+
 A lock named from the SHA-256 digest of the canonical worktree is created with
 `O_EXCL`. It contains the run ID and canonical worktree. The worker releases it only
 when its run reaches a terminal state. CLI reconciliation may release a lock after an
 owned tmux session has disappeared and the run has been classified as failed.
+Each worktree also has a persistent `flock` guard. Acquisition and release occur under
+that guard, and release compares both owner data and the opened lock inode immediately
+before unlinking. A per-run `flock` guard serializes terminal publication, status
+reconciliation, and stop updates.
+
+## Prompt admission
+
+The approved prompt is reopened with `O_NOFOLLOW`, checked as a bounded regular file,
+and read before tmux starts. Those exact bytes are atomically stored as a private run
+snapshot. The worker opens only the snapshot, so later replacement of the project
+prompt cannot change or redirect the admitted input.
 
 ## Lifecycle and timeout
 

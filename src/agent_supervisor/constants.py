@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 FORMAT = 1
+STATE_ROOT_MARKER = {"format": FORMAT, "identity": "guigu-agent-supervisor-state-v1"}
 IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
 RUN_ID_PATTERN = r"^[0-9a-f]{32}$"
 TERMINAL_STATES = frozenset({"completed", "failed", "cancelled", "stopped"})

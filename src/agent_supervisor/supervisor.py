@@ -8,14 +8,16 @@ from typing import Any
 from . import tmux
 from .constants import FORMAT, START_WAIT_SECONDS, STOP_GRACE_SECONDS, TERMINAL_STATES
 from .errors import process_failure, result_error
-from .protocol import validate_request, validate_result
+from .protocol import snapshot_prompt, validate_request, validate_result
 from .state import (
     acquire_lock,
+    atomic_bytes,
     atomic_json,
     ensure_layout,
     read_json,
     release_lock,
     run_directory,
+    run_guard,
 )
 
 
@@ -38,6 +40,8 @@ class Supervisor:
         try:
             acquire_lock(self.state_root, request["worktree"], run_id)
             lock_acquired = True
+            prompt_bytes = snapshot_prompt(Path(request["prompt_file"]))
+            atomic_bytes(run_dir / "prompt.snapshot", prompt_bytes)
             atomic_json(run_dir / "request.json", request)
             runtime = {
                 "format": FORMAT,
@@ -55,12 +59,13 @@ class Supervisor:
                 raise process_failure("failed to start owned process")
             deadline = time.monotonic() + START_WAIT_SECONDS
             while time.monotonic() < deadline:
-                current = read_json(run_dir / "runtime.json")
-                if current.get("state") == "running":
-                    atomic_json(run_dir / "start-ack.json", {"format": FORMAT, "ready": True})
-                    return {"format": FORMAT, "run_id": run_id, "state": "running"}
-                if current.get("state") in TERMINAL_STATES:
-                    raise process_failure("owned process failed during startup")
+                with run_guard(run_dir):
+                    current = read_json(run_dir / "runtime.json")
+                    if current.get("state") == "running":
+                        atomic_json(run_dir / "start-ack.json", {"format": FORMAT, "ready": True})
+                        return {"format": FORMAT, "run_id": run_id, "state": "running"}
+                    if current.get("state") in TERMINAL_STATES:
+                        raise process_failure("owned process failed during startup")
                 time.sleep(0.05)
             raise process_failure("owned process did not become observable")
         except Exception:
@@ -74,17 +79,18 @@ class Supervisor:
 
     def _runtime(self, run_id: str) -> tuple[Path, dict[str, Any], dict[str, Any]]:
         run_dir = run_directory(self.state_root, run_id)
-        runtime = read_json(run_dir / "runtime.json")
-        request = read_json(run_dir / "request.json")
-        expected_session = tmux.session_name(run_id)
-        if runtime.get("run_id") != run_id or runtime.get("tmux_session") != expected_session:
-            raise process_failure("supervisor state is unavailable")
-        if runtime.get("state") not in TERMINAL_STATES and not tmux.exists(expected_session):
-            runtime["state"] = "failed"
-            runtime["finished_at"] = now()
-            runtime["exit_code"] = 6
-            atomic_json(run_dir / "runtime.json", runtime)
-            release_lock(self.state_root, request["worktree"], run_id)
+        with run_guard(run_dir):
+            runtime = read_json(run_dir / "runtime.json")
+            request = read_json(run_dir / "request.json")
+            expected_session = tmux.session_name(run_id)
+            if runtime.get("run_id") != run_id or runtime.get("tmux_session") != expected_session:
+                raise process_failure("supervisor state is unavailable")
+            if runtime.get("state") not in TERMINAL_STATES and not tmux.exists(expected_session):
+                runtime["state"] = "failed"
+                runtime["finished_at"] = now()
+                runtime["exit_code"] = 6
+                atomic_json(run_dir / "runtime.json", runtime)
+                release_lock(self.state_root, request["worktree"], run_id)
         return run_dir, runtime, request
 
     def status(self, run_id: str) -> dict[str, Any]:
@@ -108,16 +114,23 @@ class Supervisor:
                 time.sleep(0.05)
             if tmux.exists(name):
                 tmux.kill(name)
-                runtime["state"] = "cancelled"
-                runtime["finished_at"] = now()
-                runtime["exit_code"] = 130
-                atomic_json(run_dir / "runtime.json", runtime)
-                release_lock(self.state_root, request["worktree"], run_id)
+                with run_guard(run_dir):
+                    runtime = read_json(run_dir / "runtime.json")
+                    if runtime["state"] not in TERMINAL_STATES:
+                        runtime["state"] = "cancelled"
+                        runtime["finished_at"] = now()
+                        runtime["exit_code"] = 130
+                        atomic_json(run_dir / "runtime.json", runtime)
+                    release_lock(self.state_root, request["worktree"], run_id)
             else:
-                runtime = read_json(run_dir / "runtime.json")
+                with run_guard(run_dir):
+                    runtime = read_json(run_dir / "runtime.json")
         elif state == "completed":
             if tmux.exists(name):
                 tmux.kill(name)
-            runtime["state"] = "stopped"
-            atomic_json(run_dir / "runtime.json", runtime)
+            with run_guard(run_dir):
+                runtime = read_json(run_dir / "runtime.json")
+                if runtime["state"] == "completed":
+                    runtime["state"] = "stopped"
+                    atomic_json(run_dir / "runtime.json", runtime)
         return {"format": FORMAT, "run_id": run_id, "state": runtime["state"]}

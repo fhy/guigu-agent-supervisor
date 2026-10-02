@@ -10,6 +10,64 @@ from .helpers import cli, output, wait_state, write_request
 
 
 class ProcessTests(unittest.TestCase):
+    def test_unowned_existing_state_root_is_not_modified(self) -> None:
+        for mode in (0o700, 0o755):
+            with self.subTest(mode=oct(mode)), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                unrelated = root / "unrelated"
+                unrelated.mkdir(mode=mode)
+                unrelated.chmod(mode)
+                sentinel = unrelated / "sentinel.bin"
+                sentinel.write_bytes(b"unchanged-state-root")
+                before = sentinel.read_bytes()
+                result = cli("status", "f" * 32, "--state-root", unrelated)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(unrelated.stat().st_mode & 0o777, mode)
+                self.assertEqual(sentinel.read_bytes(), before)
+                self.assertEqual({path.name for path in unrelated.iterdir()}, {"sentinel.bin"})
+
+    def test_layout_symlinks_do_not_mutate_external_directory(self) -> None:
+        for layout_name in ("runs", "locks"):
+            with self.subTest(layout=layout_name), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                state = root / "state"
+                initialized = cli("status", "f" * 32, "--state-root", state)
+                self.assertEqual(initialized.returncode, 4)
+                outside = root / "outside"
+                outside.mkdir()
+                sentinel = outside / "sentinel.bin"
+                sentinel.write_bytes(b"outside-unchanged")
+                layout = state / layout_name
+                layout.rmdir()
+                layout.symlink_to(outside, target_is_directory=True)
+                result = cli("status", "f" * 32, "--state-root", state)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(sentinel.read_bytes(), b"outside-unchanged")
+                self.assertEqual({path.name for path in outside.iterdir()}, {"sentinel.bin"})
+
+    def test_state_root_symlink_ancestor_and_wrong_layout_mode_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            outside = root / "outside"
+            outside.mkdir()
+            ancestor = root / "linked-parent"
+            ancestor.symlink_to(outside, target_is_directory=True)
+            result = cli("status", "f" * 32, "--state-root", ancestor / "state")
+            self.assertEqual(result.returncode, 3)
+            self.assertEqual(list(outside.iterdir()), [])
+
+        for layout_name in ("runs", "locks"):
+            with self.subTest(layout=layout_name), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                state = root / "state"
+                initialized = cli("status", "f" * 32, "--state-root", state)
+                self.assertEqual(initialized.returncode, 4)
+                layout = state / layout_name
+                layout.chmod(0o755)
+                result = cli("status", "f" * 32, "--state-root", state)
+                self.assertEqual(result.returncode, 3)
+                self.assertEqual(layout.stat().st_mode & 0o777, 0o755)
+
     def test_complete_result_and_stop_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -127,6 +185,39 @@ class ProcessTests(unittest.TestCase):
             run_id = output(started)["run_id"]
             wait_state(state, run_id, {"completed"})
             self.assertFalse(marker.exists())
+
+    def test_prompt_snapshot_ignores_symlink_and_oversize_replacements(self) -> None:
+        replacements = ("symlink", "oversize")
+        for replacement in replacements:
+            with self.subTest(replacement=replacement), tempfile.TemporaryDirectory() as raw:
+                root = Path(raw)
+                state = root / "state"
+                secret = "outside-secret-must-not-be-read"
+                request, _ = write_request(
+                    root,
+                    {
+                        "mock": {
+                            "sleep_seconds": 0.2,
+                            "summary": f"admitted-{replacement}",
+                        }
+                    },
+                )
+                request_data = json.loads(request.read_text())
+                prompt = Path(request_data["prompt_file"])
+                started = cli("start", request, "--approved-root", root, "--state-root", state)
+                self.assertEqual(started.returncode, 0, started.stderr)
+                run_id = output(started)["run_id"]
+                prompt.unlink()
+                if replacement == "symlink":
+                    outside = root / "outside.json"
+                    outside.write_text(json.dumps({"mock": {"summary": secret}}))
+                    prompt.symlink_to(outside)
+                else:
+                    prompt.write_bytes(secret.encode() + b"x" * (1024 * 1024 + 1))
+                wait_state(state, run_id, {"completed"})
+                result = cli("result", run_id, "--state-root", state)
+                self.assertEqual(output(result)["summary"], f"admitted-{replacement}")
+                self.assertNotIn(secret, result.stdout + result.stderr)
 
     def test_different_worktrees_run_independently(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

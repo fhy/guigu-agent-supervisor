@@ -1,5 +1,7 @@
 import json
+import os
 import re
+import stat
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +85,33 @@ def validate_request(path: Path, approved_root: Path) -> dict[str, Any]:
     data["worktree"] = str(worktree)
     data["prompt_file"] = str(prompt)
     return data
+
+
+def snapshot_prompt(path: Path) -> bytes:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError:
+        raise unsafe("prompt file cannot be opened safely") from None
+    try:
+        entry = os.fstat(fd)
+        if not stat.S_ISREG(entry.st_mode) or entry.st_size > MAX_PROMPT_BYTES:
+            raise unsafe("prompt file is not an admissible regular file")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(65536, MAX_PROMPT_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_PROMPT_BYTES:
+                raise unsafe("prompt file is too large")
+        return b"".join(chunks)
+    except OSError:
+        raise unsafe("prompt file cannot be read safely") from None
+    finally:
+        os.close(fd)
 
 
 def validate_result(path: Path, run_id: str, worktree: Path) -> dict[str, Any]:
