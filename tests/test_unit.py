@@ -9,7 +9,7 @@ from unittest.mock import patch
 from agent_supervisor.constants import FORMAT
 from agent_supervisor.errors import SupervisorError
 from agent_supervisor.paths import canonical_prompt, safe_state_root
-from agent_supervisor.protocol import validate_request, validate_result
+from agent_supervisor.protocol import validate_request, validate_request_data, validate_result
 from agent_supervisor.state import (
     acquire_lock,
     atomic_json,
@@ -63,6 +63,37 @@ class ProtocolTests(unittest.TestCase):
                     request.write_text(json.dumps(data))
                     with self.assertRaises(SupervisorError):
                         validate_request(request, root.resolve())
+
+    def test_file_and_object_requests_reject_non_numeric_format_and_enum_types(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            request, _ = write_request(root)
+            baseline = json.loads(request.read_text())
+            cases = [
+                ("format", True),
+                ("format", False),
+                ("format", "1"),
+                ("format", None),
+                ("format", []),
+                ("format", {}),
+                ("role", []),
+                ("role", {}),
+                ("backend", []),
+                ("backend", {}),
+                ("expected_result", []),
+                ("expected_result", {}),
+            ]
+            for field, value in cases:
+                with self.subTest(field=field, value=value):
+                    data = dict(baseline)
+                    data[field] = value
+                    with self.assertRaises(SupervisorError) as object_error:
+                        validate_request_data(data, root.resolve())
+                    self.assertEqual(object_error.exception.code, "invalid_request")
+                    request.write_text(json.dumps(data))
+                    with self.assertRaises(SupervisorError) as file_error:
+                        validate_request(request, root.resolve())
+                    self.assertEqual(file_error.exception.code, "invalid_request")
 
     def test_worktree_outside_root_and_large_prompt_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as raw, tempfile.TemporaryDirectory() as outside_raw:

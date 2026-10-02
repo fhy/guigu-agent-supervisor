@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -55,6 +56,87 @@ class McpSchemaTests(unittest.TestCase):
 
 
 class McpStdioTests(unittest.TestCase):
+    def test_malformed_input_matrix_is_invalid_without_side_effects(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            state = root / "state"
+            worktree = root / "worktree"
+            worktree.mkdir()
+            prompt = worktree / "prompt.json"
+            prompt.write_text(json.dumps({"mock": {}}))
+            baseline = request_object(worktree, prompt)
+            sentinel = "MCP_MALFORMED_SENTINEL_31f2"
+            start_cases: list[tuple[str, object]] = [
+                ("format", True),
+                ("format", False),
+                ("format", "1"),
+                ("format", None),
+                ("format", []),
+                ("format", {}),
+                ("project_id", []),
+                ("task_id", {}),
+                ("role", []),
+                ("role", {}),
+                ("backend", []),
+                ("backend", {}),
+                ("worktree", []),
+                ("prompt_file", {}),
+                ("timeout_seconds", []),
+                ("expected_result", []),
+                ("expected_result", {}),
+            ]
+            run_id_values: list[object] = [None, True, 1, [], {}, sentinel]
+
+            async def exercise() -> None:
+                parameters = StdioServerParameters(
+                    command=str(MCP),
+                    args=["--approved-root", str(root), "--state-root", str(state)],
+                    env={"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", "/tmp")},
+                )
+                async with stdio_client(parameters) as streams:
+                    async with ClientSession(*streams) as session:
+                        await session.initialize()
+                        for field, value in start_cases:
+                            arguments = dict(baseline)
+                            arguments[field] = value
+                            result = await session.call_tool("agent_start", arguments)
+                            self.assert_invalid_tool_result(result, sentinel)
+
+                        missing = dict(baseline)
+                        del missing["role"]
+                        self.assert_invalid_tool_result(
+                            await session.call_tool("agent_start", missing), sentinel
+                        )
+                        extra = dict(baseline)
+                        extra["command"] = sentinel
+                        self.assert_invalid_tool_result(
+                            await session.call_tool("agent_start", extra), sentinel
+                        )
+
+                        for tool_name in ("agent_status", "agent_result", "agent_stop"):
+                            for value in run_id_values:
+                                result = await session.call_tool(tool_name, {"run_id": value})
+                                self.assert_invalid_tool_result(result, sentinel)
+                            result = await session.call_tool(
+                                tool_name, {"run_id": "a" * 32, "state_root": sentinel}
+                            )
+                            self.assert_invalid_tool_result(result, sentinel)
+
+            anyio.run(exercise)
+            self.assertEqual(list((state / "runs").iterdir()), [])
+            self.assertEqual(list((state / "locks").iterdir()), [])
+            sessions = subprocess.run(
+                ["tmux", "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotIn("agent-", sessions.stdout)
+
+    def assert_invalid_tool_result(self, result: object, sentinel: str) -> None:
+        self.assertTrue(result.isError)
+        self.assertEqual(result.structuredContent["error"]["code"], "invalid_request")
+        self.assertNotIn(sentinel, result.content[0].text)
+
     def test_stdio_lifecycles_and_cli_observation_after_disconnect(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)

@@ -19,6 +19,11 @@ requests and MCP object requests use the same strict validator. `Supervisor.star
 accepts either a validated object or the existing file path entry, with one shared run
 creation path so prompt snapshots and ownership checks cannot diverge.
 
+JSON scalar types are checked before values. In particular, protocol format requires
+an integer that is not a Python boolean, and enum membership is evaluated only after a
+string type check. Arrays, objects, nulls and booleans therefore remain ordinary
+`invalid_request` inputs instead of reaching unexpected-exception handling.
+
 ## Tool and error framing
 
 The four tools have explicit JSON schemas with `additionalProperties: false`.

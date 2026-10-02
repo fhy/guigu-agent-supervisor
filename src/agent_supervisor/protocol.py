@@ -68,16 +68,22 @@ def validate_request_data(value: object, approved_root: Path) -> dict[str, Any]:
     data = dict(value)
     if set(data) != REQUEST_FIELDS:
         raise invalid("request fields do not match protocol v1")
-    if data["format"] != FORMAT:
+    request_format = data["format"]
+    if isinstance(request_format, bool) or not isinstance(request_format, int):
+        raise invalid("unsupported request format")
+    if request_format != FORMAT:
         raise invalid("unsupported request format")
     for key in ("project_id", "task_id"):
         if not isinstance(data[key], str) or not re.fullmatch(IDENTIFIER_PATTERN, data[key]):
             raise invalid(f"invalid {key}")
-    if data["role"] not in ROLES:
+    if not isinstance(data["role"], str) or data["role"] not in ROLES:
         raise invalid("unsupported role")
-    if data["backend"] not in BACKENDS:
+    if not isinstance(data["backend"], str) or data["backend"] not in BACKENDS:
         raise invalid("unsupported backend")
-    if data["expected_result"] not in EXPECTED_RESULTS:
+    if (
+        not isinstance(data["expected_result"], str)
+        or data["expected_result"] not in EXPECTED_RESULTS
+    ):
         raise invalid("unsupported expected_result")
     timeout = data["timeout_seconds"]
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 86400:
