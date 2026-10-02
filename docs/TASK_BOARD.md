@@ -2,11 +2,13 @@
 
 ## Current
 
-None.
+| ID | Task | Status | Owner | Specification |
+|---|---|---|---|---|
+| T002 | Minimal stdio MCP wrapper | active | implementation agent | [spec](tasks/T002-minimal-stdio-mcp-wrapper.md) |
 
 ## Queue
 
-None. An MCP wrapper is considered only after T001 evidence is accepted.
+None.
 
 ## Blocked
 
