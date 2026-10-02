@@ -2,10 +2,12 @@
 
 ## Candidate
 
-- Implementation candidate: `9a91fb7600f570bf7bd1d2d4b57a69b6c18c96ba`
+- R2 implementation candidate: `74eb73ad1efeaf35d0b9390975d549494007668c`
+- Original R1 candidate: `9a91fb7600f570bf7bd1d2d4b57a69b6c18c96ba`
+- R1 review commit: `9188cc5b197ec2bcd7a07695564d7341fb541844`
 - Specification commit: `474d4118adb287ce3785d7d4c48c49648dbf01fe`
 - Accepted T001 baseline: `f4d4a943e4436cd59633b860b4a4f41aa31c220f`
-- Status: ready for independent review; not yet accepted
+- Status: R1 changes closed; ready for independent R2 review; not yet accepted
 - Remote writes after T002 started: none
 
 ## Delivered
@@ -20,6 +22,23 @@
 - Direct Supervisor calls through AnyIO worker threads; no CLI parsing or shell use.
 - Official SDK client tests using real stdio, tmux and cross-interface CLI observation.
 - README installation and startup documentation.
+
+## R1 closure
+
+The R2 candidate closes only the two findings frozen in
+`docs/reviews/T002-review-r1.md`:
+
+- File and object requests require format to be an integer that is not a boolean, with
+  value exactly `1`. The real stdio matrix rejects true, false, strings, null, arrays
+  and objects without creating a run.
+- Role, backend and expected-result values require string types before enum membership.
+  Arrays and objects now return the fixed `invalid_request` result rather than
+  `process_failure`.
+
+The malformed-input matrix also covers every start field, missing/extra fields, and
+all three run-id tools with null, boolean, number, array, object, malformed string and
+extra-root inputs. It asserts no run directory, owner lock, Agent tmux session or
+sentinel disclosure is produced.
 
 ## Automated evidence
 
@@ -36,7 +55,7 @@ python3 -m compileall -q src tests
 (no output)
 
 PYTHONPATH=src python3 -m unittest discover -v
-Ran 29 tests in 10.332s
+Ran 31 tests in 10.897s
 OK
 
 focused T001 race suite, five consecutive runs
@@ -47,11 +66,13 @@ git diff --check
 (no output)
 ```
 
-The 29 tests comprise the accepted 25-test T001 suite plus four T002 tests. T002 tests
+The 31 tests comprise the accepted 25-test T001 suite plus six T002 tests. T002 tests
 verify exact schemas, structured/redacted errors, unsafe-path redaction, real SDK
 initialization and tool discovery, completed and cancelled lifecycles, idempotent stop,
 and CLI observation of a run after the MCP server disconnects. No tmux session remained
 after cleanup.
+
+The full real-stdio malformed-input matrix passed three additional consecutive runs.
 
 ## Fresh-shell evidence
 
@@ -88,7 +109,7 @@ then stops it through the CLI.
 
 ## Review request
 
-Independently review exact commit `9a91fb7600f570bf7bd1d2d4b57a69b6c18c96ba`, rerun
-all checks above, and repeat the stdio lifecycle from a fresh shell. Keep T002 in
-`review` until the exact candidate is accepted. Do not push or begin an SDK upgrade or
-new supervisor capability as part of T002 review.
+Independently review exact commit `74eb73ad1efeaf35d0b9390975d549494007668c`, rerun
+all checks above, repeat the stdio lifecycle, and rerun the malformed-input matrix from
+a fresh shell. Keep T002 in `review` until the exact candidate is accepted. Do not push
+or begin an SDK upgrade or new supervisor capability as part of T002 review.
