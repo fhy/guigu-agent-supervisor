@@ -1,6 +1,6 @@
 # T002: Minimal stdio MCP Wrapper
 
-Status: review
+Status: changes_requested
 Owner: implementation agent
 Priority: next experiment after accepted T001
 
