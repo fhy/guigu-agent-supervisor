@@ -1,0 +1,11 @@
+[project]
+name = "guigu-agent-supervisor"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"

@@ -4,7 +4,7 @@
 
 | ID | Task | Status | Owner | Specification |
 |---|---|---|---|---|
-| T001 | Minimal file-backed supervisor CLI | queued | unassigned | [spec](tasks/T001-minimal-supervisor-cli.md) |
+| T001 | Minimal file-backed supervisor CLI | review | implementation agent | [spec](tasks/T001-minimal-supervisor-cli.md) |
 
 ## Queue
 

@@ -22,6 +22,32 @@ agent-run result <run-id>
 It uses `tmux` for process continuity and a per-run directory for request, runtime,
 logs and result artifacts. See [T001](docs/tasks/T001-minimal-supervisor-cli.md).
 
+## Local usage
+
+Requirements are Python 3.11 or newer and `tmux`. No Python runtime packages are
+required. From the repository root:
+
+```text
+./agent-run start /absolute/path/request.json \
+  --approved-root /absolute/approved/root \
+  --state-root /absolute/path/to/test-state
+./agent-run status <run-id> --state-root /absolute/path/to/test-state
+./agent-run result <run-id> --state-root /absolute/path/to/test-state
+./agent-run stop <run-id> --state-root /absolute/path/to/test-state
+```
+
+`--state-root` is optional. Its default is
+`${XDG_STATE_HOME:-$HOME/.local/state}/guigu-agent-supervisor/`. The request schema and
+command output are defined in [the file protocol](docs/PROTOCOL.md). Only the
+deterministic `mock` backend is included in T001; request JSON cannot supply a command,
+executable, environment, or shell string.
+
+Run the complete test suite with:
+
+```text
+PYTHONPATH=src python3 -m unittest discover -v
+```
+
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
