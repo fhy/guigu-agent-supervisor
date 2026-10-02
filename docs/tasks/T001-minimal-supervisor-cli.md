@@ -1,7 +1,7 @@
 # T001: Minimal File-Backed Supervisor CLI
 
-Status: queued
-Owner: unassigned
+Status: done
+Owner: implementation agent
 Priority: first prototype
 
 ## Goal
