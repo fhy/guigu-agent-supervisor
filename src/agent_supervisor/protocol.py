@@ -59,6 +59,13 @@ def _read_json_object(path: Path, limit: int, kind: str) -> dict[str, Any]:
 
 def validate_request(path: Path, approved_root: Path) -> dict[str, Any]:
     data = _read_json_object(path, MAX_RESULT_BYTES, "request")
+    return validate_request_data(data, approved_root)
+
+
+def validate_request_data(value: object, approved_root: Path) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise invalid("request must be a JSON object")
+    data = dict(value)
     if set(data) != REQUEST_FIELDS:
         raise invalid("request fields do not match protocol v1")
     if data["format"] != FORMAT:

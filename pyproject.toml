@@ -2,6 +2,7 @@
 name = "guigu-agent-supervisor"
 version = "0.1.0"
 requires-python = ">=3.11"
+dependencies = ["mcp==1.28.1"]
 
 [tool.ruff]
 line-length = 100

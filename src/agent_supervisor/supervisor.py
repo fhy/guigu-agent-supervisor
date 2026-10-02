@@ -8,7 +8,7 @@ from typing import Any
 from . import tmux
 from .constants import FORMAT, START_WAIT_SECONDS, STOP_GRACE_SECONDS, TERMINAL_STATES
 from .errors import process_failure, result_error
-from .protocol import snapshot_prompt, validate_request, validate_result
+from .protocol import snapshot_prompt, validate_request, validate_request_data, validate_result
 from .state import (
     acquire_lock,
     atomic_bytes,
@@ -33,6 +33,13 @@ class Supervisor:
 
     def start(self, request_path: Path, approved_root: Path) -> dict[str, Any]:
         request = validate_request(request_path, approved_root)
+        return self._start_validated(request)
+
+    def start_request(self, request_value: object, approved_root: Path) -> dict[str, Any]:
+        request = validate_request_data(request_value, approved_root)
+        return self._start_validated(request)
+
+    def _start_validated(self, request: dict[str, Any]) -> dict[str, Any]:
         run_id = uuid.uuid4().hex
         run_dir = run_directory(self.state_root, run_id, must_exist=False)
         run_dir.mkdir(mode=0o700)
@@ -125,6 +132,12 @@ class Supervisor:
             else:
                 with run_guard(run_dir):
                     runtime = read_json(run_dir / "runtime.json")
+                    if runtime["state"] not in TERMINAL_STATES:
+                        runtime["state"] = "cancelled"
+                        runtime["finished_at"] = now()
+                        runtime["exit_code"] = 130
+                        atomic_json(run_dir / "runtime.json", runtime)
+                        release_lock(self.state_root, request["worktree"], run_id)
         elif state == "completed":
             if tmux.exists(name):
                 tmux.kill(name)

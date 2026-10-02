@@ -24,8 +24,8 @@ logs and result artifacts. See [T001](docs/tasks/T001-minimal-supervisor-cli.md)
 
 ## Local usage
 
-Requirements are Python 3.11 or newer and `tmux`. No Python runtime packages are
-required. From the repository root:
+The supervisor CLI requires Python 3.11 or newer and `tmux`; it has no Python runtime
+package dependency. From the repository root:
 
 ```text
 ./agent-run start /absolute/path/request.json \
@@ -52,6 +52,22 @@ Run the complete test suite with:
 ```text
 PYTHONPATH=src python3 -m unittest discover -v
 ```
+
+## MCP wrapper
+
+The optional T002 wrapper additionally requires the pinned official SDK:
+
+```text
+python3 -m pip install 'mcp==1.28.1'
+./agent-mcp \
+  --approved-root /absolute/approved/root \
+  --state-root /absolute/path/to/test-state
+```
+
+`agent-mcp` uses stdio only and exposes exactly `agent_start`, `agent_status`,
+`agent_result`, and `agent_stop`. The approved root and state root belong to server
+startup configuration and cannot be supplied or overridden by tool calls. Closing the
+MCP client does not stop an active run; it remains observable through `agent-run`.
 
 ## Documentation
 

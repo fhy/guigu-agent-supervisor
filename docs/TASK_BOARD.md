@@ -4,7 +4,7 @@
 
 | ID | Task | Status | Owner | Specification |
 |---|---|---|---|---|
-| T002 | Minimal stdio MCP wrapper | active | implementation agent | [spec](tasks/T002-minimal-stdio-mcp-wrapper.md) |
+| T002 | Minimal stdio MCP wrapper | review | implementation agent | [spec](tasks/T002-minimal-stdio-mcp-wrapper.md) |
 
 ## Queue
 
